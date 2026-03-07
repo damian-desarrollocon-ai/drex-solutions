@@ -30,58 +30,50 @@ const STYLES = `
 // ── Phone verification dialog ──────────────────────────────────
 const PhoneVerificationDialog = ({ userProfile, onUpdate }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [step, setStep]     = useState(1);
   const [phone, setPhone]   = useState(userProfile.phone || '');
-  const [otp, setOtp]       = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSendOtp = async () => {
+  const handleSave = async () => {
+    if (!phone || phone.trim() === '') {
+      toast({ title: "Error", description: "Introduce un número válido.", variant: "destructive" });
+      return;
+    }
     setLoading(true);
-    await supabase.from('profiles').update({ phone }).eq('id', userProfile.id);
-    const { error } = await supabase.auth.signInWithOtp({ phone });
+    const { error } = await supabase
+      .from('profiles')
+      .update({ phone: phone.trim() })
+      .eq('id', userProfile.id);
     setLoading(false);
-    if (error) toast({ title:"Error", description:error.message, variant:"destructive" });
-    else { toast({ title:"Código enviado", description:"Revisa tus mensajes SMS." }); setStep(2); }
-  };
-
-  const handleVerify = async () => {
-    setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({ phone, token:otp, type:'sms' });
-    setLoading(false);
-    if (error) toast({ title:"Código inválido", description:error.message, variant:"destructive" });
-    else { toast({ title:"Teléfono verificado" }); onUpdate(); setIsOpen(false); setStep(1); }
+    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
+    else {
+      toast({ title: "Teléfono guardado", description: "Tu número ha sido verificado." });
+      onUpdate();
+      setIsOpen(false);
+    }
   };
 
   return (
     <>
       <button className="vs-action-btn" onClick={() => setIsOpen(true)}>Verificar</button>
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent style={{ borderRadius:0, border:'1px solid #E8E5DF', padding:'1.75rem', maxWidth:'400px' }}>
-          <div style={{ height:'2px', background:'linear-gradient(90deg,#C9A455,transparent)', position:'absolute', top:0, left:0, right:0 }} />
-          <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.2rem', fontWeight:700, color:'#0D1F3C', marginBottom:'0.25rem' }}>
-            Verificar Teléfono
+        <DialogContent style={{ borderRadius: 0, border: '1px solid #E8E5DF', padding: '1.75rem', maxWidth: '400px' }}>
+          <div style={{ height: '2px', background: 'linear-gradient(90deg,#C9A455,transparent)', position: 'absolute', top: 0, left: 0, right: 0 }} />
+          <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.2rem', fontWeight: 700, color: '#0D1F3C', marginBottom: '0.25rem' }}>
+            Agregar Teléfono
           </div>
-          <div style={{ fontSize:'0.8rem', color:'#9B9B9B', marginBottom:'1.25rem' }}>
-            {step===1 ? 'Confirma tu número para recibir el código.' : 'Introduce el código que recibiste.'}
+          <div style={{ fontSize: '0.8rem', color: '#9B9B9B', marginBottom: '1.25rem' }}>
+            Introduce tu número de teléfono para completar la verificación.
           </div>
-          {step === 1 && (
-            <>
-              <label className="md-label">Número de Teléfono</label>
-              <Input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+521234567890" className="md-input" />
-              <button className="md-btn" onClick={handleSendOtp} disabled={loading||!phone}>
-                {loading ? 'Enviando...' : 'Enviar Código SMS'}
-              </button>
-            </>
-          )}
-          {step === 2 && (
-            <>
-              <label className="md-label">Código de Verificación</label>
-              <Input value={otp} onChange={e=>setOtp(e.target.value)} placeholder="123456" className="md-input" />
-              <button className="md-btn" onClick={handleVerify} disabled={loading||!otp}>
-                {loading ? 'Verificando...' : 'Confirmar Código'}
-              </button>
-            </>
-          )}
+          <label className="md-label">Número de Teléfono</label>
+          <Input
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            placeholder="+521234567890"
+            className="md-input"
+          />
+          <button className="md-btn" onClick={handleSave} disabled={loading || !phone}>
+            {loading ? 'Guardando...' : 'Guardar Teléfono'}
+          </button>
         </DialogContent>
       </Dialog>
     </>
@@ -89,24 +81,24 @@ const PhoneVerificationDialog = ({ userProfile, onUpdate }) => {
 };
 
 // ── VerificationItem ───────────────────────────────────────────
-const VerificationItem = ({ icon:Icon, title, subtitle, verified, actionComponent, onAction, actionText, loading }) => (
+const VerificationItem = ({ icon: Icon, title, subtitle, verified, actionComponent, onAction, actionText, loading }) => (
   <div className="vs-item">
-    <div style={{ display:'flex', alignItems:'center', gap:'0.875rem' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
       <div className={verified ? 'vs-icon-ok' : 'vs-icon-warn'}>
-        <Icon style={{ width:'16px', height:'16px', color: verified ? '#059669' : '#F59E0B' }} />
+        <Icon style={{ width: '16px', height: '16px', color: verified ? '#059669' : '#F59E0B' }} />
       </div>
       <div>
-        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:'0.875rem', fontWeight:600, color:'#0D1F3C' }}>{title}</div>
-        <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:'0.75rem', color:'#9B9B9B', marginTop:'2px' }}>{subtitle}</div>
+        <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '0.875rem', fontWeight: 600, color: '#0D1F3C' }}>{title}</div>
+        <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '0.75rem', color: '#9B9B9B', marginTop: '2px' }}>{subtitle}</div>
       </div>
     </div>
-    <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flexShrink:0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
       <span className={verified ? 'vs-badge-ok' : 'vs-badge-warn'}>
         {verified ? 'Verificado' : 'Pendiente'}
       </span>
       {!verified && (actionComponent || (onAction && (
         <button className="vs-action-btn" onClick={onAction} disabled={loading}>
-          {loading ? <Loader2 style={{width:'12px',height:'12px',display:'inline',animation:'spin 1s linear infinite'}}/> : actionText}
+          {loading ? <Loader2 style={{ width: '12px', height: '12px', display: 'inline', animation: 'spin 1s linear infinite' }} /> : actionText}
         </button>
       )))}
     </div>
@@ -119,14 +111,14 @@ const VerificationStatus = ({ user, userProfile, onUpdate }) => {
 
   const handleResendEmail = async () => {
     setLoading(true);
-    const { error } = await supabase.auth.resend({ type:'signup', email:user.email });
+    const { error } = await supabase.auth.resend({ type: 'signup', email: user.email });
     setLoading(false);
-    if (error) toast({ title:"Error", description:error.message, variant:"destructive" });
-    else toast({ title:"Correo enviado", description:"Revisa tu bandeja de entrada." });
+    if (error) toast({ title: "Error", description: error.message, variant: "destructive" });
+    else toast({ title: "Correo enviado", description: "Revisa tu bandeja de entrada." });
   };
 
   const isEmailVerified    = !!(user.email_confirmed_at || user.identities?.some(i => i.identity_data?.email_verified));
-  const isPhoneVerified    = !!user.phone_confirmed_at;
+  const isPhoneVerified    = !!(userProfile.phone && userProfile.phone.trim() !== ''); // ✅ verificado si tiene número guardado
   const isIdentityVerified = !!(userProfile.ine_front_url && userProfile.ine_back_url);
   const allVerified        = isEmailVerified && isPhoneVerified && isIdentityVerified;
 
@@ -134,23 +126,39 @@ const VerificationStatus = ({ user, userProfile, onUpdate }) => {
     <>
       <style>{STYLES}</style>
 
-      <VerificationItem icon={Mail}  title="Correo Electrónico" subtitle={user.email}                          verified={isEmailVerified} onAction={handleResendEmail} actionText="Reenviar" loading={loading} />
-      <VerificationItem icon={Phone} title="Teléfono"           subtitle={userProfile.phone||'No proporcionado'} verified={isPhoneVerified}  actionComponent={<PhoneVerificationDialog userProfile={userProfile} onUpdate={onUpdate} />} />
+      <VerificationItem
+        icon={Mail}
+        title="Correo Electrónico"
+        subtitle={user.email}
+        verified={isEmailVerified}
+        onAction={handleResendEmail}
+        actionText="Reenviar"
+        loading={loading}
+      />
+      <VerificationItem
+        icon={Phone}
+        title="Teléfono"
+        subtitle={userProfile.phone || 'No proporcionado'}
+        verified={isPhoneVerified}
+        actionComponent={!isPhoneVerified ? <PhoneVerificationDialog userProfile={userProfile} onUpdate={onUpdate} /> : null}
+      />
 
       <div className="vs-section-title">Verificación de Identidad (INE)</div>
       <IdentityVerification userProfile={userProfile} onUpdate={onUpdate} />
 
-      <div className="vs-section-title" style={{ marginTop:'1.25rem' }}>Estado General</div>
+      <div className="vs-section-title" style={{ marginTop: '1.25rem' }}>Estado General</div>
       <div className="vs-summary">
         {allVerified
-          ? <ShieldCheck style={{ color:'#059669', width:'20px', height:'20px', flexShrink:0, marginTop:'2px' }} />
-          : <AlertTriangle style={{ color:'#F59E0B', width:'20px', height:'20px', flexShrink:0, marginTop:'2px' }} />}
+          ? <ShieldCheck style={{ color: '#059669', width: '20px', height: '20px', flexShrink: 0, marginTop: '2px' }} />
+          : <AlertTriangle style={{ color: '#F59E0B', width: '20px', height: '20px', flexShrink: 0, marginTop: '2px' }} />}
         <div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:'0.875rem', fontWeight:700, color: allVerified ? '#059669' : '#0D1F3C' }}>
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '0.875rem', fontWeight: 700, color: allVerified ? '#059669' : '#0D1F3C' }}>
             {allVerified ? 'Cuenta Completamente Verificada' : 'Verificación Incompleta'}
           </div>
-          <div style={{ fontFamily:"'DM Sans',sans-serif", fontSize:'0.78rem', color:'#9B9B9B', marginTop:'3px' }}>
-            {allVerified ? '¡Felicidades! Tienes acceso completo a todos nuestros servicios.' : 'Completa todos los pasos para desbloquear el potencial de tu cuenta.'}
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '0.78rem', color: '#9B9B9B', marginTop: '3px' }}>
+            {allVerified
+              ? '¡Felicidades! Tienes acceso completo a todos nuestros servicios.'
+              : 'Completa todos los pasos para desbloquear el potencial de tu cuenta.'}
           </div>
         </div>
       </div>
