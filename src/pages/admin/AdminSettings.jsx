@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/lib/customSupabaseClient.js';
 import { useToast } from '@/components/ui/use-toast';
-import { Loader2, AlertCircle, Info, PlayCircle, Settings } from 'lucide-react';
+import { Loader2, AlertCircle, Info, PlayCircle } from 'lucide-react';
 
 const S = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap');
@@ -28,11 +28,11 @@ const S = `
 `;
 
 const AdminSettings = () => {
-  const [profile, setProfile]     = useState(null);
-  const [loading, setLoading]     = useState(true);
-  const [updating, setUpdating]   = useState(false);
+  const [profile, setProfile]       = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [updating, setUpdating]     = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [marking, setMarking]     = useState(false);
+  const [marking, setMarking]       = useState(false);
   const { toast } = useToast();
 
   const fetchProfile = useCallback(async () => {
@@ -73,25 +73,38 @@ const AdminSettings = () => {
     } finally { setUpdating(false); }
   };
 
-  // ✅ Antes llamaba a Edge Function inexistente — ahora marca todas las transacciones
-  // de usuarios con automatic_reversal_enabled usando la RPC
+  // ✅ Dos queries separadas — sin subquery SQL que Supabase no acepta
   const markTransactions = async () => {
     setMarking(true);
     try {
-      // Obtener transacciones completadas de usuarios con reversión activa
+      // 1. Usuarios con reversión activa
+      const { data: profiles, error: profError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('automatic_reversal_enabled', true);
+      if (profError) throw profError;
+
+      if (!profiles?.length) {
+        toast({ title: 'Sin usuarios', description: 'No hay usuarios con reversión automática activa.' });
+        return;
+      }
+
+      // 2. Transacciones completadas de esos usuarios
       const { data: txs, error: txError } = await supabase
         .from('transactions')
         .select('id')
         .eq('status', 'completed')
-        .filter('user_id', 'in', `(
-          SELECT id FROM profiles WHERE automatic_reversal_enabled = true
-        )`);
-
+        .in('user_id', profiles.map(p => p.id));
       if (txError) throw txError;
 
-      // Marcar cada una como en_revision
+      if (!txs?.length) {
+        toast({ title: 'Sin transacciones', description: 'No hay transacciones completadas para marcar.' });
+        return;
+      }
+
+      // 3. Marcar cada una via RPC
       let count = 0;
-      for (const tx of (txs || [])) {
+      for (const tx of txs) {
         const { error } = await supabase
           .rpc('reject_and_reverse_transaction', { p_transaction_id: tx.id });
         if (!error) count++;
@@ -103,13 +116,13 @@ const AdminSettings = () => {
     } finally { setMarking(false); }
   };
 
-  // ✅ Llama a la RPC que ya existe y procesa todas las en_revision
+  // ✅ RPC que ya existe — revierte las en_revision con más de 5 min y devuelve saldo
   const processRefunds = async () => {
     setProcessing(true);
     try {
       const { error } = await supabase.rpc('revert_pending_transactions');
       if (error) throw error;
-      toast({ title: 'Reembolsos procesados', description: 'Las transacciones en revisión fueron revertidas y el saldo devuelto.' });
+      toast({ title: 'Reembolsos procesados', description: 'Transacciones revertidas y saldo devuelto correctamente.' });
     } catch(e) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally { setProcessing(false); }
