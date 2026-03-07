@@ -39,24 +39,25 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
   const { user, userProfile } = useAuth();
   const { toast } = useToast();
 
-  const [amount, setAmount]               = useState('');
-  const [recipientName, setRecipientName] = useState('');
+  const [amount, setAmount]                     = useState('');
+  const [recipientName, setRecipientName]       = useState('');
   const [recipientAccount, setRecipientAccount] = useState('');
-  const [recipientBank, setRecipientBank] = useState('Drex Bank');
-  const [description, setDescription]    = useState('');
-  const [beneficiaries, setBeneficiaries] = useState([]);
-  const [selectedBenef, setSelectedBenef] = useState('');
-  const [step, setStep]                   = useState(1);
-  const [loading, setLoading]             = useState(false);
-  const [savingBenef, setSavingBenef]     = useState(false);
+  const [recipientBank, setRecipientBank]       = useState('Drex Bank');
+  const [description, setDescription]           = useState('');
+  const [beneficiaries, setBeneficiaries]       = useState([]);
+  const [selectedBenef, setSelectedBenef]       = useState('');
+  const [step, setStep]                         = useState(1);
+  const [loading, setLoading]                   = useState(false);
+  const [savingBenef, setSavingBenef]           = useState(false);
 
-  const fmt = (a) => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(a);
+  const fmt = (a) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(a);
 
   useEffect(() => {
     if (!isOpen || !user) return;
     if (!userProfile?.transfers_enabled) {
-      toast({ title:"Función Deshabilitada", description:"Las transferencias no están activadas. Contacta a tu asesor.", variant:"destructive", duration:5000 });
-      onClose(); return;
+      toast({ title: "Función Deshabilitada", description: "Las transferencias no están activadas. Contacta a tu asesor.", variant: "destructive", duration: 5000 });
+      onClose();
+      return;
     }
     fetchBeneficiaries();
     setStep(1); setAmount(''); setRecipientName(''); setRecipientAccount('');
@@ -77,37 +78,81 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
 
   const handleNext = () => {
     const parsed = parseFloat(amount);
-    if (isNaN(parsed) || parsed <= 0)        { toast({ title:"Monto inválido", description:"El monto debe ser positivo.", variant:"destructive" }); return; }
-    if (userProfile.balance < parsed)        { toast({ title:"Saldo insuficiente", variant:"destructive" }); return; }
-    if (!recipientName || !recipientAccount) { toast({ title:"Faltan datos", description:"Nombre y cuenta son requeridos.", variant:"destructive" }); return; }
-    if (recipientAccount.length !== 18)      { toast({ title:"CLABE inválida", description:"La CLABE debe tener 18 dígitos.", variant:"destructive" }); return; }
+    if (isNaN(parsed) || parsed <= 0)        { toast({ title: "Monto inválido", description: "El monto debe ser positivo.", variant: "destructive" }); return; }
+    if (userProfile.balance < parsed)        { toast({ title: "Saldo insuficiente", variant: "destructive" }); return; }
+    if (!recipientName || !recipientAccount) { toast({ title: "Faltan datos", description: "Nombre y cuenta son requeridos.", variant: "destructive" }); return; }
+    if (recipientAccount.length !== 18)      { toast({ title: "CLABE inválida", description: "La CLABE debe tener 18 dígitos.", variant: "destructive" }); return; }
     setStep(2);
   };
 
   const handleSaveBenef = async () => {
     if (!recipientName || recipientAccount.length !== 18) {
-      toast({ title:"Error", description:"Nombre y CLABE de 18 dígitos son requeridos.", variant:"destructive" }); return;
+      toast({ title: "Error", description: "Nombre y CLABE de 18 dígitos son requeridos.", variant: "destructive" }); return;
     }
     setSavingBenef(true);
-    const { error } = await supabase.from('beneficiaries').insert({ user_id:user.id, name:recipientName, clabe:recipientAccount, bank:recipientBank });
+    const { error } = await supabase.from('beneficiaries').insert({ user_id: user.id, name: recipientName, clabe: recipientAccount, bank: recipientBank });
     setSavingBenef(false);
-    if (error) toast({ title:"Error", description:"No se pudo guardar.", variant:"destructive" });
-    else { toast({ title:"Beneficiario guardado" }); fetchBeneficiaries(); }
+    if (error) toast({ title: "Error", description: "No se pudo guardar.", variant: "destructive" });
+    else { toast({ title: "Beneficiario guardado" }); fetchBeneficiaries(); }
   };
 
   const executeTransfer = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('process-transaction', {
-        body: { userId:user.id, amount:parseFloat(amount), description:description||'Transferencia', recipientName, recipientAccount, recipientBank, reversalEnabled:userProfile?.automatic_reversal_enabled||false }
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast({ title:"Transferencia Iniciada", description:data?.message || `Transferencia a ${recipientName} procesándose.` });
-      onTransferSuccess(); onClose();
+      const parsed = parseFloat(amount);
+      const isReversal = userProfile?.automatic_reversal_enabled || false;
+
+      // 1. Descontar saldo al usuario
+      const { error: balanceError } = await supabase
+        .from('profiles')
+        .update({ balance: userProfile.balance - parsed })
+        .eq('id', user.id);
+      if (balanceError) throw balanceError;
+
+      // 2. Insertar la transacción
+      const { data: txData, error: txError } = await supabase
+        .from('transactions')
+        .insert({
+          user_id:          user.id,
+          amount:           parsed,
+          type:             'transfer',
+          description:      description || 'Transferencia',
+          status:           isReversal ? 'en_revision' : 'completed',
+          recipient_name:   recipientName,
+          withdrawal_bank:  recipientBank,
+          reference:        recipientAccount,
+        })
+        .select()
+        .single();
+      if (txError) throw txError;
+
+      // 3. Si tiene reversión automática → llamar RPC para marcar en revisión y programar reversión
+      if (isReversal) {
+        const { error: rpcError } = await supabase
+          .rpc('reject_and_reverse_transaction', { p_transaction_id: txData.id });
+        if (rpcError) throw rpcError;
+
+        toast({
+          title: "Transferencia en Revisión",
+          description: `La transferencia a ${recipientName} está siendo revisada y será revertida en breve.`,
+          variant: "destructive",
+          duration: 6000,
+        });
+      } else {
+        toast({
+          title: "Transferencia Exitosa",
+          description: `Transferencia a ${recipientName} procesada correctamente.`,
+          duration: 5000,
+        });
+      }
+
+      onTransferSuccess();
+      onClose();
     } catch (err) {
-      toast({ title:"Error en la Transferencia", description:err.message||"Error inesperado.", variant:"destructive" });
-    } finally { setLoading(false); }
+      toast({ title: "Error en la Transferencia", description: err.message || "Error inesperado.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const showNewBenef = !selectedBenef || selectedBenef === 'new';
@@ -116,19 +161,19 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
     <>
       <style>{STYLES}</style>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent style={{ borderRadius:0, border:'1px solid #E8E5DF', padding:0, overflow:'hidden', maxWidth:'440px' }}>
+        <DialogContent style={{ borderRadius: 0, border: '1px solid #E8E5DF', padding: 0, overflow: 'hidden', maxWidth: '440px' }}>
           <div className="tm-wrap">
             <div className="tm-gold-bar" />
 
-            <div className="tm-title">{step===1 ? 'Nueva Transferencia' : 'Confirmar Transferencia'}</div>
-            <div className="tm-desc">{step===1 ? 'Introduce los datos de la transferencia.' : 'Revisa y confirma la operación.'}</div>
+            <div className="tm-title">{step === 1 ? 'Nueva Transferencia' : 'Confirmar Transferencia'}</div>
+            <div className="tm-desc">{step === 1 ? 'Introduce los datos de la transferencia.' : 'Revisa y confirma la operación.'}</div>
 
             {/* ── Step 1 ── */}
             {step === 1 && (
               <>
                 <div className="tm-field">
                   <label className="tm-label">Monto (MXN)</label>
-                  <Input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" className="tm-input" />
+                  <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="tm-input" />
                 </div>
 
                 {beneficiaries.length > 0 && (
@@ -140,7 +185,7 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
                       </SelectTrigger>
                       <SelectContent>
                         {beneficiaries.map(b => (
-                          <SelectItem key={b.id} value={b.id}>{b.name} (••••{(b.clabe||b.account_number)?.slice(-4)})</SelectItem>
+                          <SelectItem key={b.id} value={b.id}>{b.name} (••••{(b.clabe || b.account_number)?.slice(-4)})</SelectItem>
                         ))}
                         <SelectItem value="new">+ Nuevo beneficiario</SelectItem>
                       </SelectContent>
@@ -152,15 +197,15 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
                   <>
                     <div className="tm-field">
                       <label className="tm-label">Nombre del Destinatario</label>
-                      <Input value={recipientName} onChange={e=>setRecipientName(e.target.value)} placeholder="Nombre completo" className="tm-input" />
+                      <Input value={recipientName} onChange={e => setRecipientName(e.target.value)} placeholder="Nombre completo" className="tm-input" />
                     </div>
                     <div className="tm-field">
                       <label className="tm-label">CLABE (18 dígitos)</label>
-                      <Input value={recipientAccount} onChange={e=>setRecipientAccount(e.target.value)} placeholder="18 dígitos" maxLength="18" className="tm-input" />
+                      <Input value={recipientAccount} onChange={e => setRecipientAccount(e.target.value)} placeholder="18 dígitos" maxLength="18" className="tm-input" />
                     </div>
                     <div className="tm-field">
                       <label className="tm-label">Banco</label>
-                      <Input value={recipientBank} onChange={e=>setRecipientBank(e.target.value)} className="tm-input" />
+                      <Input value={recipientBank} onChange={e => setRecipientBank(e.target.value)} className="tm-input" />
                     </div>
                     <button className="tm-link-btn" onClick={handleSaveBenef} disabled={savingBenef}>
                       {savingBenef ? 'Guardando...' : '+ Guardar como beneficiario'}
@@ -168,13 +213,13 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
                   </>
                 )}
 
-                <div className="tm-field" style={{ marginTop:'0.875rem' }}>
+                <div className="tm-field" style={{ marginTop: '0.875rem' }}>
                   <label className="tm-label">Concepto (opcional)</label>
-                  <Input value={description} onChange={e=>setDescription(e.target.value)} placeholder="Ej. Pago de servicios" className="tm-input" />
+                  <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Ej. Pago de servicios" className="tm-input" />
                 </div>
 
                 <button className="tm-btn-primary" onClick={handleNext}>
-                  Continuar <Send style={{ width:'14px', height:'14px' }} />
+                  Continuar <Send style={{ width: '14px', height: '14px' }} />
                 </button>
               </>
             )}
@@ -185,7 +230,7 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
                 <div className="tm-confirm-box">
                   <div className="tm-confirm-row">
                     <span className="tm-confirm-label">Monto</span>
-                    <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.25rem', fontWeight:700, color:'#0D1F3C' }}>{fmt(parseFloat(amount))}</span>
+                    <span style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.25rem', fontWeight: 700, color: '#0D1F3C' }}>{fmt(parseFloat(amount))}</span>
                   </div>
                   <div className="tm-confirm-row">
                     <span className="tm-confirm-label">Para</span>
@@ -193,7 +238,7 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
                   </div>
                   <div className="tm-confirm-row">
                     <span className="tm-confirm-label">CLABE</span>
-                    <span className="tm-confirm-value" style={{ fontFamily:'monospace' }}>••••{recipientAccount.slice(-4)}</span>
+                    <span className="tm-confirm-value" style={{ fontFamily: 'monospace' }}>••••{recipientAccount.slice(-4)}</span>
                   </div>
                   <div className="tm-confirm-row">
                     <span className="tm-confirm-label">Banco</span>
@@ -206,19 +251,19 @@ const TransferModal = ({ isOpen, onClose, onTransferSuccess }) => {
                 </div>
 
                 <div className="tm-warning">
-                  <AlertTriangle style={{ color:'#F59E0B', width:'16px', height:'16px', flexShrink:0, marginTop:'2px' }} />
-                  <p style={{ fontFamily:"'DM Sans',sans-serif", fontSize:'0.78rem', color:'#92400E', margin:0, lineHeight:1.5 }}>
+                  <AlertTriangle style={{ color: '#F59E0B', width: '16px', height: '16px', flexShrink: 0, marginTop: '2px' }} />
+                  <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '0.78rem', color: '#92400E', margin: 0, lineHeight: 1.5 }}>
                     Esta operación es irreversible. Verifica que los datos sean correctos antes de confirmar.
                   </p>
                 </div>
 
                 <div className="tm-footer">
                   <button className="tm-btn-outline" onClick={() => setStep(1)} disabled={loading}>
-                    <ChevronLeft style={{ width:'13px', height:'13px' }} /> Atrás
+                    <ChevronLeft style={{ width: '13px', height: '13px' }} /> Atrás
                   </button>
-                  <button className="tm-btn-primary" style={{ flex:1, marginTop:0 }} onClick={executeTransfer} disabled={loading}>
+                  <button className="tm-btn-primary" style={{ flex: 1, marginTop: 0 }} onClick={executeTransfer} disabled={loading}>
                     {loading
-                      ? <><Loader2 style={{ width:'14px', height:'14px', animation:'spin 1s linear infinite' }} /> Procesando...</>
+                      ? <><Loader2 style={{ width: '14px', height: '14px', animation: 'spin 1s linear infinite' }} /> Procesando...</>
                       : 'Confirmar Transferencia'}
                   </button>
                 </div>
