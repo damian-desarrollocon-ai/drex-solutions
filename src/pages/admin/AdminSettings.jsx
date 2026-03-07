@@ -28,80 +28,114 @@ const S = `
 `;
 
 const AdminSettings = () => {
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
+  const [profile, setProfile]     = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [updating, setUpdating]   = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [marking, setMarking] = useState(false);
+  const [marking, setMarking]     = useState(false);
   const { toast } = useToast();
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { data, error } = await supabase.from('profiles').select('id,automatic_reversal_enabled').eq('id',user.id).single();
-      if(error) throw error;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id,automatic_reversal_enabled')
+        .eq('id', user.id)
+        .single();
+      if (error) throw error;
       setProfile(data);
     } catch(e) {
-      toast({title:'Error',description:e.message,variant:'destructive'});
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally { setLoading(false); }
-  },[toast]);
+  }, [toast]);
 
-  useEffect(()=>{ fetchProfile(); },[fetchProfile]);
+  useEffect(() => { fetchProfile(); }, [fetchProfile]);
 
   const handleReversalToggle = async (val) => {
-    if(!profile) return;
+    if (!profile) return;
     setUpdating(true);
     const prev = profile.automatic_reversal_enabled;
-    setProfile(p=>({...p,automatic_reversal_enabled:val}));
+    setProfile(p => ({ ...p, automatic_reversal_enabled: val }));
     try {
-      const {data,error} = await supabase.from('profiles').update({automatic_reversal_enabled:val}).eq('id',profile.id).select();
-      if(error||!data?.length) throw error||new Error('No se pudo confirmar');
-      toast({title:val?'Reversión automática activada':'Reversión automática desactivada'});
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ automatic_reversal_enabled: val })
+        .eq('id', profile.id)
+        .select();
+      if (error || !data?.length) throw error || new Error('No se pudo confirmar');
+      toast({ title: val ? 'Reversión automática activada' : 'Reversión automática desactivada' });
       await fetchProfile();
     } catch(e) {
-      toast({title:'Error',description:e.message,variant:'destructive'});
-      setProfile(p=>({...p,automatic_reversal_enabled:prev}));
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+      setProfile(p => ({ ...p, automatic_reversal_enabled: prev }));
     } finally { setUpdating(false); }
   };
 
+  // ✅ Antes llamaba a Edge Function inexistente — ahora marca todas las transacciones
+  // de usuarios con automatic_reversal_enabled usando la RPC
   const markTransactions = async () => {
     setMarking(true);
     try {
-      const {data,error} = await supabase.functions.invoke('reverse-transactions',{method:'GET'});
-      if(error) throw error;
-      toast({title:'Transacciones marcadas',description:`${data?.marked||0} transacción(es) marcadas como "en_revision".`});
-    } catch(e) { toast({title:'Error',description:e.message,variant:'destructive'}); }
-    finally { setMarking(false); }
+      // Obtener transacciones completadas de usuarios con reversión activa
+      const { data: txs, error: txError } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('status', 'completed')
+        .filter('user_id', 'in', `(
+          SELECT id FROM profiles WHERE automatic_reversal_enabled = true
+        )`);
+
+      if (txError) throw txError;
+
+      // Marcar cada una como en_revision
+      let count = 0;
+      for (const tx of (txs || [])) {
+        const { error } = await supabase
+          .rpc('reject_and_reverse_transaction', { p_transaction_id: tx.id });
+        if (!error) count++;
+      }
+
+      toast({ title: 'Transacciones marcadas', description: `${count} transacción(es) marcadas como "en_revision".` });
+    } catch(e) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally { setMarking(false); }
   };
 
+  // ✅ Llama a la RPC que ya existe y procesa todas las en_revision
   const processRefunds = async () => {
     setProcessing(true);
     try {
-      const {data,error} = await supabase.rpc('revert_pending_transactions');
-      if(error) throw error;
-      toast({title:'Reembolsos procesados',description:`${data?.length||0} reembolso(s) procesados.`});
-    } catch(e) { toast({title:'Error',description:e.message,variant:'destructive'}); }
-    finally { setProcessing(false); }
+      const { error } = await supabase.rpc('revert_pending_transactions');
+      if (error) throw error;
+      toast({ title: 'Reembolsos procesados', description: 'Las transacciones en revisión fueron revertidas y el saldo devuelto.' });
+    } catch(e) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally { setProcessing(false); }
   };
 
-  const runAll = async () => { await markTransactions(); await new Promise(r=>setTimeout(r,1000)); await processRefunds(); };
+  const runAll = async () => {
+    await markTransactions();
+    await new Promise(r => setTimeout(r, 1000));
+    await processRefunds();
+  };
 
-  if(loading) return (
+  if (loading) return (
     <>
       <style>{S}</style>
-      <div style={{display:'flex',justifyContent:'center',padding:'4rem'}}>
-        <Loader2 style={{color:'#C9A455',width:28,height:28,animation:'spin 1s linear infinite'}}/>
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
+        <Loader2 style={{ color: '#C9A455', width: 28, height: 28, animation: 'spin 1s linear infinite' }} />
       </div>
     </>
   );
 
-  if(!profile) return (
+  if (!profile) return (
     <>
       <style>{S}</style>
-      <div style={{padding:'1.5rem',border:'1px solid rgba(220,38,38,.2)',background:'rgba(220,38,38,.04)',display:'flex',gap:'.75rem',alignItems:'flex-start'}}>
-        <AlertCircle style={{color:'#DC2626',width:18,height:18,flexShrink:0,marginTop:2}}/>
-        <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.85rem',color:'#DC2626',margin:0}}>No se pudo cargar el perfil del administrador.</p>
+      <div style={{ padding: '1.5rem', border: '1px solid rgba(220,38,38,.2)', background: 'rgba(220,38,38,.04)', display: 'flex', gap: '.75rem', alignItems: 'flex-start' }}>
+        <AlertCircle style={{ color: '#DC2626', width: 18, height: 18, flexShrink: 0, marginTop: 2 }} />
+        <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.85rem', color: '#DC2626', margin: 0 }}>No se pudo cargar el perfil del administrador.</p>
       </div>
     </>
   );
@@ -111,47 +145,47 @@ const AdminSettings = () => {
       <Helmet><title>Ajustes — Admin</title></Helmet>
       <style>{S}</style>
 
-      <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} style={{marginBottom:'2rem'}}>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: '2rem' }}>
         <div className="pg-tag">Configuración</div>
-        <h1 style={{fontFamily:"'Cormorant Garamond',serif",fontSize:'2rem',fontWeight:700,color:'#0D1F3C',lineHeight:1.1,margin:'0 0 .25rem'}}>Ajustes del Sistema</h1>
-        <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.875rem',color:'#9B9B9B'}}>Controla las funcionalidades clave de la plataforma.</p>
+        <h1 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '2rem', fontWeight: 700, color: '#0D1F3C', lineHeight: 1.1, margin: '0 0 .25rem' }}>Ajustes del Sistema</h1>
+        <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.875rem', color: '#9B9B9B' }}>Controla las funcionalidades clave de la plataforma.</p>
       </motion.div>
 
-      <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:.05}}>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .05 }}>
 
         {/* Card 1: Configuración de transacciones */}
         <div className="pg-card">
           <div className="pg-card-hd">
-            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:'1.15rem',fontWeight:700,color:'#0D1F3C'}}>Configuración de Transacciones</div>
-            <div style={{fontSize:'.8rem',color:'#9B9B9B',marginTop:'.15rem'}}>Controla el comportamiento de las transferencias.</div>
+            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.15rem', fontWeight: 700, color: '#0D1F3C' }}>Configuración de Transacciones</div>
+            <div style={{ fontSize: '.8rem', color: '#9B9B9B', marginTop: '.15rem' }}>Controla el comportamiento de las transferencias.</div>
           </div>
           <div className="pg-card-bd">
-            <div className={`sw-row ${profile.automatic_reversal_enabled?'warn':''}`}>
-              <div style={{flex:1,marginRight:'1.5rem'}}>
-                <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.875rem',fontWeight:700,color:'#0D1F3C',margin:'0 0 .25rem'}}>
+            <div className={`sw-row ${profile.automatic_reversal_enabled ? 'warn' : ''}`}>
+              <div style={{ flex: 1, marginRight: '1.5rem' }}>
+                <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.875rem', fontWeight: 700, color: '#0D1F3C', margin: '0 0 .25rem' }}>
                   Reversión Automática de Transacciones
                   {profile.automatic_reversal_enabled && <span className="active-chip">Activo</span>}
                 </p>
-                <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.78rem',color:'#6B6B6B',margin:0,lineHeight:1.5}}>
+                <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.78rem', color: '#6B6B6B', margin: 0, lineHeight: 1.5 }}>
                   Cuando está activado, las transferencias se procesan normalmente pero el sistema crea un reembolso automático. Útil para modo demo.
                 </p>
-                <div style={{display:'flex',alignItems:'center',gap:'.4rem',marginTop:'.5rem'}}>
-                  <div style={{width:7,height:7,borderRadius:'50%',background:profile.automatic_reversal_enabled?'#22C55E':'#D1D5DB'}}/>
-                  <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.7rem',fontWeight:600,color:'#9B9B9B',textTransform:'uppercase',letterSpacing:'.08em'}}>
-                    {profile.automatic_reversal_enabled?'Activado':'Desactivado'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', marginTop: '.5rem' }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: profile.automatic_reversal_enabled ? '#22C55E' : '#D1D5DB' }} />
+                  <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.7rem', fontWeight: 600, color: '#9B9B9B', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+                    {profile.automatic_reversal_enabled ? 'Activado' : 'Desactivado'}
                   </span>
                 </div>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:'.75rem',flexShrink:0}}>
-                {updating && <Loader2 style={{width:14,height:14,color:'#C9A455',animation:'spin 1s linear infinite'}}/>}
-                <Switch checked={profile.automatic_reversal_enabled} onCheckedChange={handleReversalToggle} disabled={updating}/>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem', flexShrink: 0 }}>
+                {updating && <Loader2 style={{ width: 14, height: 14, color: '#C9A455', animation: 'spin 1s linear infinite' }} />}
+                <Switch checked={profile.automatic_reversal_enabled} onCheckedChange={handleReversalToggle} disabled={updating} />
               </div>
             </div>
 
             {profile.automatic_reversal_enabled && (
-              <div className="info-box warn" style={{display:'flex',gap:'.75rem',alignItems:'flex-start'}}>
-                <Info style={{width:15,height:15,color:'#D97706',flexShrink:0,marginTop:2}}/>
-                <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.78rem',color:'#92400E',margin:0,lineHeight:1.5}}>
+              <div className="info-box warn" style={{ display: 'flex', gap: '.75rem', alignItems: 'flex-start' }}>
+                <Info style={{ width: 15, height: 15, color: '#D97706', flexShrink: 0, marginTop: 2 }} />
+                <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.78rem', color: '#92400E', margin: 0, lineHeight: 1.5 }}>
                   <strong>Modo de reversión activo.</strong> Las transferencias generarán dos movimientos: el débito y un crédito de reembolso automático.
                 </p>
               </div>
@@ -162,42 +196,42 @@ const AdminSettings = () => {
         {/* Card 2: Gestión de reembolsos */}
         <div className="pg-card">
           <div className="pg-card-hd">
-            <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:'1.15rem',fontWeight:700,color:'#0D1F3C'}}>Gestión de Reembolsos</div>
-            <div style={{fontSize:'.8rem',color:'#9B9B9B',marginTop:'.15rem'}}>Marca y procesa reembolsos de forma manual o automática.</div>
+            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: '1.15rem', fontWeight: 700, color: '#0D1F3C' }}>Gestión de Reembolsos</div>
+            <div style={{ fontSize: '.8rem', color: '#9B9B9B', marginTop: '.15rem' }}>Marca y procesa reembolsos de forma manual o automática.</div>
           </div>
           <div className="pg-card-bd">
-            <div className="info-box" style={{marginBottom:'1.25rem'}}>
-              <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.78rem',fontWeight:700,color:'#0D1F3C',margin:'0 0 .625rem'}}>¿Cómo funciona?</p>
+            <div className="info-box" style={{ marginBottom: '1.25rem' }}>
+              <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.78rem', fontWeight: 700, color: '#0D1F3C', margin: '0 0 .625rem' }}>¿Cómo funciona?</p>
               {[
-                {num:'1.',color:'#2563EB',text:<><strong>Marcar en revisión:</strong> Busca transacciones de usuarios con reversión activada y las marca como <code style={{background:'#F0EDE8',padding:'0 .25rem',fontSize:'.72rem'}}>en_revision</code></>,},
-                {num:'2.',color:'#059669',text:<><strong>Procesar reembolsos:</strong> Devuelve el saldo y crea transacciones de crédito para las que están en revisión.</>,},
-                {num:'3.',color:'#7C3AED',text:<><strong>Ejecutar todo:</strong> Realiza ambos pasos automáticamente en secuencia.</>,},
-              ].map((s,i)=>(
-                <div key={i} style={{display:'flex',gap:'.625rem',marginBottom:'.4rem',alignItems:'flex-start'}}>
-                  <span className="step-num" style={{color:s.color}}>{s.num}</span>
-                  <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.78rem',color:'#6B6B6B',margin:0,lineHeight:1.5}}>{s.text}</p>
+                { num: '1.', color: '#2563EB', text: <><strong>Marcar en revisión:</strong> Busca transacciones completadas de usuarios con reversión activada y las marca como <code style={{ background: '#F0EDE8', padding: '0 .25rem', fontSize: '.72rem' }}>en_revision</code></> },
+                { num: '2.', color: '#059669', text: <><strong>Procesar reembolsos:</strong> Devuelve el saldo a los usuarios cuyas transacciones llevan más de 5 minutos en revisión.</> },
+                { num: '3.', color: '#7C3AED', text: <><strong>Ejecutar todo:</strong> Realiza ambos pasos automáticamente en secuencia.</> },
+              ].map((s, i) => (
+                <div key={i} style={{ display: 'flex', gap: '.625rem', marginBottom: '.4rem', alignItems: 'flex-start' }}>
+                  <span className="step-num" style={{ color: s.color }}>{s.num}</span>
+                  <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.78rem', color: '#6B6B6B', margin: 0, lineHeight: 1.5 }}>{s.text}</p>
                 </div>
               ))}
             </div>
 
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:'.75rem'}}>
-              <button className="action-btn secondary" onClick={markTransactions} disabled={marking||processing}>
-                {marking ? <Loader2 style={{width:13,height:13,animation:'spin 1s linear infinite'}}/> : <AlertCircle style={{width:13,height:13}}/>}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: '.75rem' }}>
+              <button className="action-btn secondary" onClick={markTransactions} disabled={marking || processing}>
+                {marking ? <Loader2 style={{ width: 13, height: 13, animation: 'spin 1s linear infinite' }} /> : <AlertCircle style={{ width: 13, height: 13 }} />}
                 1. Marcar Revisión
               </button>
-              <button className="action-btn secondary" onClick={processRefunds} disabled={processing||marking}>
-                {processing ? <Loader2 style={{width:13,height:13,animation:'spin 1s linear infinite'}}/> : <PlayCircle style={{width:13,height:13}}/>}
+              <button className="action-btn secondary" onClick={processRefunds} disabled={processing || marking}>
+                {processing ? <Loader2 style={{ width: 13, height: 13, animation: 'spin 1s linear infinite' }} /> : <PlayCircle style={{ width: 13, height: 13 }} />}
                 2. Procesar Reembolsos
               </button>
-              <button className="action-btn primary" onClick={runAll} disabled={processing||marking}>
-                {(processing||marking) ? <Loader2 style={{width:13,height:13,animation:'spin 1s linear infinite'}}/> : <PlayCircle style={{width:13,height:13}}/>}
+              <button className="action-btn primary" onClick={runAll} disabled={processing || marking}>
+                {(processing || marking) ? <Loader2 style={{ width: 13, height: 13, animation: 'spin 1s linear infinite' }} /> : <PlayCircle style={{ width: 13, height: 13 }} />}
                 Ejecutar Todo
               </button>
             </div>
 
-            <div className="info-box info" style={{marginTop:'.875rem',display:'flex',gap:'.625rem',alignItems:'flex-start'}}>
-              <Info style={{width:14,height:14,color:'#2563EB',flexShrink:0,marginTop:2}}/>
-              <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.75rem',color:'#1E40AF',margin:0,lineHeight:1.5}}>
+            <div className="info-box info" style={{ marginTop: '.875rem', display: 'flex', gap: '.625rem', alignItems: 'flex-start' }}>
+              <Info style={{ width: 14, height: 14, color: '#2563EB', flexShrink: 0, marginTop: 2 }} />
+              <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: '.75rem', color: '#1E40AF', margin: 0, lineHeight: 1.5 }}>
                 <strong>Recomendación:</strong> Usa "Ejecutar Todo" para el proceso completo, o los botones individuales si necesitas control paso a paso.
               </p>
             </div>
@@ -208,4 +242,5 @@ const AdminSettings = () => {
     </>
   );
 };
+
 export default AdminSettings;
