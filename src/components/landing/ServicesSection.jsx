@@ -1,7 +1,82 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
+const DASHBOARD_STATES = [
+  {
+    label: 'Panel Principal',
+    rows: [
+      {
+        left: { dot: '#22C55E', text: 'Protección Activa' },
+        right: { color: '#22C55E', text: 'ONLINE' },
+      },
+      {
+        left: { icon: 'fas fa-credit-card', title: 'Última transacción', sub: 'Farmacia San Pablo · hace 2h' },
+        right: { color: '#fff', text: '-$89.50' },
+      },
+    ],
+    badge: { icon: 'fas fa-award', color: '#E8C97A', bg: 'rgba(201,164,85,0.12)', border: 'rgba(201,164,85,0.35)', text: 'Cliente Premium Verificado' },
+  },
+  {
+    label: 'Recuperación Activa',
+    rows: [
+      {
+        left: { dot: '#C9A455', text: 'Caso en Proceso' },
+        right: { color: '#C9A455', text: 'EN CURSO' },
+      },
+      {
+        left: { icon: 'fas fa-folder-open', title: 'Expediente #DRX-2847', sub: 'Actualizado hace 15 min' },
+        right: { color: '#C9A455', text: '68%' },
+      },
+    ],
+    badge: { icon: 'fas fa-balance-scale', color: '#93C5FD', bg: 'rgba(37,99,235,0.12)', border: 'rgba(37,99,235,0.35)', text: 'Equipo Legal Asignado' },
+  },
+  {
+    label: 'Fondos Recuperados',
+    rows: [
+      {
+        left: { dot: '#22C55E', text: 'Transferencia Completada' },
+        right: { color: '#22C55E', text: 'EXITOSO' },
+      },
+      {
+        left: { icon: 'fas fa-piggy-bank', title: 'Fondos recuperados', sub: 'Depositado hoy · 09:42 am' },
+        right: { color: '#22C55E', text: '+$87,492' },
+      },
+    ],
+    badge: { icon: 'fas fa-shield-alt', color: '#86EFAC', bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.35)', text: 'Patrimonio Protegido' },
+  },
+  {
+    label: 'Alerta de Seguridad',
+    rows: [
+      {
+        left: { dot: '#F59E0B', text: 'Transacción Sospechosa' },
+        right: { color: '#F59E0B', text: 'ALERTA' },
+      },
+      {
+        left: { icon: 'fas fa-exclamation-triangle', title: 'Intento bloqueado', sub: 'Origen desconocido · hace 3 min' },
+        right: { color: '#F87171', text: '-$4,200' },
+      },
+    ],
+    badge: { icon: 'fas fa-lock', color: '#FCA5A5', bg: 'rgba(220,38,38,0.12)', border: 'rgba(220,38,38,0.35)', text: 'Transacción Bloqueada' },
+  },
+];
+
 const ServicesSection = () => {
+  const [current, setCurrent] = useState(0);
+  const [fade, setFade] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setCurrent(prev => (prev + 1) % DASHBOARD_STATES.length);
+        setFade(true);
+      }, 400);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const state = DASHBOARD_STATES[current];
+
   return (
     <section id="servicios" className="py-28" style={{ background: '#fff' }}>
       <style>{`
@@ -57,10 +132,7 @@ const ServicesSection = () => {
           gap: 0.75rem;
           transition: all 0.3s;
         }
-        .svc-cta:hover {
-          background: transparent;
-          color: #0D1F3C;
-        }
+        .svc-cta:hover { background: transparent; color: #0D1F3C; }
         .svc-dashboard {
           background: #0D1F3C;
           position: relative;
@@ -69,9 +141,7 @@ const ServicesSection = () => {
         .svc-dashboard::before {
           content: '';
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
+          top: 0; left: 0; right: 0;
           height: 2px;
           background: linear-gradient(90deg, #C9A455, rgba(201,164,85,0.2));
         }
@@ -83,6 +153,35 @@ const ServicesSection = () => {
           background: rgba(255,255,255,0.04);
           border: 1px solid rgba(255,255,255,0.08);
           margin-bottom: 0.625rem;
+        }
+        .dash-fade {
+          transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+        .dash-fade.visible { opacity: 1; transform: translateY(0); }
+        .dash-fade.hidden  { opacity: 0; transform: translateY(8px); }
+        .dash-dot {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+        .dash-indicators {
+          display: flex;
+          gap: 0.4rem;
+          justify-content: center;
+          margin-top: 1.25rem;
+        }
+        .dash-dot-ind {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.2);
+          transition: all 0.3s;
+          cursor: pointer;
+        }
+        .dash-dot-ind.active {
+          background: #C9A455;
+          width: 18px;
+          border-radius: 3px;
         }
       `}</style>
 
@@ -105,24 +204,9 @@ const ServicesSection = () => {
           {/* Left: features */}
           <div>
             {[
-              {
-                icon: 'fas fa-mobile-alt',
-                color: '#0369A1',
-                title: 'Plataforma Digital Inteligente',
-                text: 'Acceso 24/7 a tu caso de recuperación con actualizaciones en tiempo real, documentos y comunicación directa con tu equipo legal asignado.'
-              },
-              {
-                icon: 'fas fa-credit-card',
-                color: '#7C3AED',
-                title: 'Protección Preventiva Anti-Fraude',
-                text: 'Sistema activo que monitorea tus cuentas con chip de seguridad avanzado y notificaciones instantáneas para cada transacción sospechosa.'
-              },
-              {
-                icon: 'fas fa-chart-line',
-                color: '#059669',
-                title: 'Análisis Forense Financiero',
-                text: 'Reportes automáticos que rastrean el origen del fraude, identifican a los responsables y construyen el expediente para la recuperación de fondos.'
-              }
+              { icon: 'fas fa-mobile-alt', color: '#0369A1', title: 'Plataforma Digital Inteligente', text: 'Acceso 24/7 a tu caso de recuperación con actualizaciones en tiempo real, documentos y comunicación directa con tu equipo legal asignado.' },
+              { icon: 'fas fa-credit-card', color: '#7C3AED', title: 'Protección Preventiva Anti-Fraude', text: 'Sistema activo que monitorea tus cuentas con chip de seguridad avanzado y notificaciones instantáneas para cada transacción sospechosa.' },
+              { icon: 'fas fa-chart-line', color: '#059669', title: 'Análisis Forense Financiero', text: 'Reportes automáticos que rastrean el origen del fraude, identifican a los responsables y construyen el expediente para la recuperación de fondos.' },
             ].map((item, i) => (
               <div key={i} className="svc-feature">
                 <div className="svc-feature-icon">
@@ -130,16 +214,11 @@ const ServicesSection = () => {
                 </div>
                 <div>
                   <div style={{ width: '3px', height: '16px', background: item.color, marginBottom: '0.5rem' }} />
-                  <div className="abt-serif" style={{ color: '#0D1F3C', fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.4rem' }}>
-                    {item.title}
-                  </div>
-                  <p className="svc-sans" style={{ fontSize: '0.875rem', color: '#4A4A4A', lineHeight: 1.7, fontWeight: 400 }}>
-                    {item.text}
-                  </p>
+                  <div className="svc-serif" style={{ color: '#0D1F3C', fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.4rem' }}>{item.title}</div>
+                  <p className="svc-sans" style={{ fontSize: '0.875rem', color: '#4A4A4A', lineHeight: 1.7, fontWeight: 400 }}>{item.text}</p>
                 </div>
               </div>
             ))}
-
             <div style={{ marginTop: '2rem' }}>
               <Link to="/register" className="svc-cta">
                 <i className="fas fa-briefcase" style={{ fontSize: '0.75rem' }}></i>
@@ -148,47 +227,65 @@ const ServicesSection = () => {
             </div>
           </div>
 
-          {/* Right: dashboard card */}
+          {/* Right: dashboard animado */}
           <div>
             <div className="svc-dashboard p-8">
               {/* Header */}
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <div className="svc-serif" style={{ color: '#fff', fontSize: '1.25rem', fontWeight: 600 }}>Mi Cuenta DREX</div>
-                  <div className="svc-sans" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Panel Principal</div>
+                  <div className={`svc-sans dash-fade ${fade ? 'visible' : 'hidden'}`} style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    {state.label}
+                  </div>
                 </div>
                 <div style={{ width: '40px', height: '40px', border: '1px solid rgba(201,164,85,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <i className="fas fa-university" style={{ color: '#C9A455', fontSize: '0.9rem' }}></i>
                 </div>
               </div>
 
-              {/* Status rows */}
-              <div className="svc-dash-row">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22C55E', boxShadow: '0 0 6px rgba(34,197,94,0.7)' }} />
-                  <span className="svc-sans" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.85rem' }}>Protección Activa</span>
-                </div>
-                <span className="svc-sans" style={{ color: '#22C55E', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.08em' }}>ONLINE</span>
-              </div>
-
-              <div className="svc-dash-row">
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.25rem' }}>
-                    <i className="fas fa-credit-card" style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.75rem' }}></i>
-                    <span className="svc-sans" style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.85rem' }}>Última transacción</span>
+              {/* Filas dinámicas */}
+              <div className={`dash-fade ${fade ? 'visible' : 'hidden'}`}>
+                {/* Row 1 */}
+                <div className="svc-dash-row">
+                  <div className="dash-dot">
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: state.rows[0].left.dot, boxShadow: `0 0 6px ${state.rows[0].left.dot}` }} />
+                    <span className="svc-sans" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.85rem' }}>{state.rows[0].left.text}</span>
                   </div>
-                  <div className="svc-sans" style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.75rem', paddingLeft: '1.25rem' }}>Farmacia San Pablo · hace 2h</div>
+                  <span className="svc-sans" style={{ color: state.rows[0].right.color, fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.08em' }}>
+                    {state.rows[0].right.text}
+                  </span>
                 </div>
-                <span className="svc-sans" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 600 }}>-$89.50</span>
+
+                {/* Row 2 */}
+                <div className="svc-dash-row">
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.25rem' }}>
+                      <i className={`${state.rows[1].left.icon}`} style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.75rem' }}></i>
+                      <span className="svc-sans" style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.85rem' }}>{state.rows[1].left.title}</span>
+                    </div>
+                    <div className="svc-sans" style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.75rem', paddingLeft: '1.25rem' }}>{state.rows[1].left.sub}</div>
+                  </div>
+                  <span className="svc-sans" style={{ color: state.rows[1].right.color, fontSize: '0.9rem', fontWeight: 600 }}>{state.rows[1].right.text}</span>
+                </div>
+
+                {/* Badge */}
+                <div style={{ background: state.badge.bg, border: `1px solid ${state.badge.border}`, padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem' }}>
+                  <i className={state.badge.icon} style={{ color: state.badge.color, fontSize: '0.85rem' }}></i>
+                  <span className="svc-sans" style={{ color: state.badge.color, fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    {state.badge.text}
+                  </span>
+                </div>
               </div>
 
-              <div style={{ background: 'rgba(201,164,85,0.12)', border: '1px solid rgba(201,164,85,0.35)', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem' }}>
-                <i className="fas fa-award" style={{ color: '#E8C97A', fontSize: '0.85rem' }}></i>
-                <span className="svc-sans" style={{ color: '#E8C97A', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Cliente Premium Verificado</span>
+              {/* Indicadores */}
+              <div className="dash-indicators">
+                {DASHBOARD_STATES.map((_, i) => (
+                  <div key={i} className={`dash-dot-ind ${i === current ? 'active' : ''}`} onClick={() => { setFade(false); setTimeout(() => { setCurrent(i); setFade(true); }, 400); }} />
+                ))}
               </div>
 
-              {/* Bottom accent */}
-              <div style={{ marginTop: '1.5rem', padding: '0.75rem 0 0', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              {/* Footer */}
+              <div style={{ marginTop: '1rem', padding: '0.75rem 0 0', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                 <i className="fas fa-lock" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.7rem' }}></i>
                 <span className="svc-sans" style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.72rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Conexión cifrada · 256-bit SSL</span>
               </div>
