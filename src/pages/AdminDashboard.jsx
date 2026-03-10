@@ -167,9 +167,11 @@ const AdminDashboard = () => {
     } else {
       const diff = newBalance - userData.balance;
       await supabase.from('transactions').insert({
-        user_id: userId, amount: Math.abs(diff),
+        user_id: userId,
+        amount: Math.abs(diff),
         type: diff > 0 ? 'credit' : 'debit',
-        description: description || 'Ajuste por administrador'
+        description: description || 'Ajuste por administrador',
+        status: 'completed',
       });
       toast({ title: "Éxito", description: "Saldo actualizado." });
       loadData();
@@ -177,14 +179,19 @@ const AdminDashboard = () => {
   };
 
   const handleUpdateReceiverAccount = (userId, val) => handleUpdateUser(userId, { receiver_account: val });
+
   const handleToggleStatus = (userId) => {
     const u = users.find(u => u.id === userId);
     if (u) handleUpdateUser(userId, { is_active: !(u.is_active !== false) });
   };
+
+  // ✅ CORREGIDO: usa RPC en lugar de Edge Function
   const handleDeleteUser = async (userId) => {
-    const { error } = await supabase.from('profiles').delete().eq('id', userId);
+    const { error } = await supabase.rpc('delete_user_by_id', {
+      user_id: userId
+    });
     if (error) return toast({ title: "Error", description: `No se pudo eliminar: ${error.message}`, variant: "destructive" });
-    toast({ title: "Usuario eliminado" });
+    toast({ title: "Usuario eliminado", description: "El usuario ha sido eliminado correctamente." });
     loadData();
   };
 
@@ -232,15 +239,15 @@ const AdminDashboard = () => {
             <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between' }}>
               <div>
                 <div className="adm-section-tag" style={{ marginBottom:'0.3rem' }}>Base de Clientes</div>
-                <div className="adm-card-title">Gestión de Clientes</div>
-                <div className="adm-card-sub">Busca, edita y gestiona todos los clientes registrados.</div>
+                <div className="adm-card-title">Gestión de Usuarios</div>
+                <div className="adm-card-sub">Busca, edita y gestiona todos los clientes del sistema.</div>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', paddingTop:'0.25rem' }}>
                 <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:'1.75rem', fontWeight:700, color:'#0D1F3C' }}>
                   {filteredUsers.length}
                 </span>
                 <span style={{ fontSize:'0.72rem', color:'#9B9B9B', lineHeight:1.3 }}>
-                  clientes<br/>encontrados
+                  usuarios<br/>encontrados
                 </span>
               </div>
             </div>
