@@ -158,25 +158,40 @@ const AdminDashboard = () => {
     else { toast({ title: "Éxito", description: "Usuario actualizado." }); loadData(); }
   };
 
-  const handleUpdateBalance = async (userId, newBalance, description) => {
-    const { data: userData, error: fetchError } = await supabase.from('profiles').select('balance').eq('id', userId).single();
-    if (fetchError || !userData) return toast({ title: "Error", description: "No se pudo obtener el saldo.", variant: "destructive" });
-    const { error: updateError } = await supabase.from('profiles').update({ balance: parseFloat(newBalance) || 0 }).eq('id', userId);
-    if (updateError) {
-      toast({ title: "Error", description: `No se pudo actualizar el saldo: ${updateError.message}`, variant: "destructive" });
-    } else {
-      const diff = newBalance - userData.balance;
-      await supabase.from('transactions').insert({
-        user_id: userId,
-        amount: Math.abs(diff),
-        type: diff > 0 ? 'credit' : 'debit',
-        description: description || 'Ajuste por administrador',
-        status: 'completed',
-      });
-      toast({ title: "Éxito", description: "Saldo actualizado." });
-      loadData();
-    }
-  };
+  const handleUpdateBalance = async (userId, newBalance, description, txDate) => {
+  const { data: userData, error: fetchError } = await supabase
+    .from('profiles')
+    .select('balance')
+    .eq('id', userId)
+    .single();
+
+  if (fetchError || !userData) {
+    return toast({ title:"Error", description:"No se pudo obtener el saldo.", variant:"destructive" });
+  }
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ balance: parseFloat(newBalance) || 0 })
+    .eq('id', userId);
+
+  if (updateError) {
+    return toast({ title:"Error", description:`No se pudo actualizar: ${updateError.message}`, variant:"destructive" });
+  }
+
+  const diff = parseFloat(newBalance) - userData.balance;
+
+  await supabase.from('transactions').insert({
+    user_id:     userId,
+    amount:      Math.abs(diff),
+    type:        diff > 0 ? 'credit' : 'debit',
+    description: description || 'Ajuste por administrador',
+    status:      'completed',
+    created_at:  txDate || new Date().toISOString(), // ✅ fecha personalizada
+  });
+
+  toast({ title:"Éxito", description:"Saldo actualizado." });
+  loadData();
+};
 
   const handleUpdateReceiverAccount = (userId, val) => handleUpdateUser(userId, { receiver_account: val });
 
