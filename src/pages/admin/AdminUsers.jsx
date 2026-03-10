@@ -37,7 +37,6 @@ const S = `
   .act.warn:hover{border-color:#D97706;color:#D97706}
   .act.ok:hover{border-color:#059669;color:#059669}
   .pg-empty{display:flex;flex-direction:column;align-items:center;gap:.75rem;padding:3rem;color:#9B9B9B;text-align:center}
-  /* Permissions dialog */
   .perm-row{display:flex;align-items:center;justify-content:space-between;padding:.875rem;border:1px solid #E8E5DF;margin-bottom:.5rem}
   .perm-row.warn{border-color:rgba(217,119,6,.3);background:rgba(217,119,6,.04)}
   .dlg-btn{font-family:'DM Sans',sans-serif;font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:.65rem 1.5rem;border:none;cursor:pointer;transition:all .2s}
@@ -102,7 +101,6 @@ const PermissionsDialog = ({ user, onUpdate, isOpen, onOpenChange }) => {
               <Switch checked={perms[r.key]||false} onCheckedChange={v=>toggle(r.key,v)}/>
             </div>
           ))}
-          {/* Card status dropdown */}
           <div className="perm-row" style={{flexDirection:'column',alignItems:'flex-start',gap:'.75rem'}}>
             <div>
               <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.82rem',fontWeight:600,color:'#0D1F3C',margin:0}}>Estado de Tarjeta</p>
@@ -120,7 +118,6 @@ const PermissionsDialog = ({ user, onUpdate, isOpen, onOpenChange }) => {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          {/* Auto reversal */}
           <div className="perm-row warn">
             <div style={{flex:1,marginRight:'1rem'}}>
               <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:'.82rem',fontWeight:700,color:'#92400E',margin:0}}>Reversión Automática</p>
@@ -157,6 +154,7 @@ const AdminUsers = () => {
   },[]);
 
   useEffect(()=>{ loadData(); },[loadData]);
+
   useEffect(()=>{
     setFilteredUsers(users.filter(u=>
       u.first_name?.toLowerCase().includes(searchTerm.toLowerCase())||
@@ -172,11 +170,12 @@ const AdminUsers = () => {
     else { toast({title:"Éxito",description:"Usuario actualizado."}); loadData(); }
   };
 
+  // ✅ CORREGIDO: usa RPC en lugar de Edge Function
   const handleDeleteUser = async (userId) => {
     if(!window.confirm('¿Eliminar este usuario? Esta acción es irreversible.')) return;
-    const { error } = await supabase.functions.invoke('delete-user',{body:{userIdToDelete:userId}});
+    const { error } = await supabase.rpc('delete_user_by_id', { user_id: userId });
     if (error) toast({title:"Error",description:error.message,variant:"destructive"});
-    else { toast({title:"Usuario eliminado"}); loadData(); }
+    else { toast({title:"Usuario eliminado",description:"El usuario ha sido eliminado correctamente."}); loadData(); }
   };
 
   return (
@@ -277,4 +276,5 @@ const AdminUsers = () => {
     </>
   );
 };
+
 export default AdminUsers;
