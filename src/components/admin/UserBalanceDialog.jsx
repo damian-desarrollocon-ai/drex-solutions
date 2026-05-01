@@ -25,6 +25,28 @@ const nowLocal = () => {
   return d.toISOString().slice(0, 16);
 };
 
+/**
+ * ✅ CORRECCIÓN: Convierte el valor de un <input type="datetime-local"> a ISO UTC
+ * respetando la zona horaria local del navegador.
+ *
+ * El problema: new Date("2026-04-10T14:30") se interpreta como UTC en algunos
+ * entornos, causando un desfase de horas al guardarse en Supabase.
+ */
+const localDateTimeToISO = (datetimeLocalValue) => {
+  const normalized = datetimeLocalValue.length === 16
+    ? datetimeLocalValue + ':00'
+    : datetimeLocalValue;
+
+  const [datePart, timePart] = normalized.split('T');
+  const [year, month, day]   = datePart.split('-').map(Number);
+  const [hours, minutes, seconds] = timePart.split(':').map(Number);
+
+  // new Date(year, month-1, ...) usa la zona horaria LOCAL del navegador
+  const localDate = new Date(year, month - 1, day, hours, minutes, seconds);
+
+  return localDate.toISOString();
+};
+
 const UserBalanceDialog = ({ user, onUpdateBalance }) => {
   const [newBalance,   setNewBalance]   = useState('');
   const [description,  setDescription]  = useState('');
@@ -37,15 +59,15 @@ const UserBalanceDialog = ({ user, onUpdateBalance }) => {
   const handleOpen = () => {
     setNewBalance('');
     setDescription('');
-    setTxDate(nowLocal()); // resetea a "ahora" cada vez que se abre
+    setTxDate(nowLocal());
     setIsOpen(true);
   };
 
   const handleSubmit = async () => {
     if (!newBalance) return;
     setLoading(true);
-    // Convierte la fecha local elegida a ISO UTC para guardar en Supabase
-    const isoDate = new Date(txDate).toISOString();
+    // ✅ CORRECCIÓN: usar localDateTimeToISO en lugar de new Date(txDate).toISOString()
+    const isoDate = localDateTimeToISO(txDate);
     await onUpdateBalance(user.id, newBalance, description, isoDate);
     setLoading(false);
     setIsOpen(false);
@@ -95,7 +117,7 @@ const UserBalanceDialog = ({ user, onUpdateBalance }) => {
               />
             </div>
 
-            {/* ✅ Fecha del movimiento */}
+            {/* Fecha del movimiento */}
             <div>
               <label className="dlg-label">Fecha del Movimiento</label>
               <input

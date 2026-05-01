@@ -24,6 +24,30 @@ const nowLocal = () => {
   return d.toISOString().slice(0, 16);
 };
 
+/**
+ * Convierte el valor de un <input type="datetime-local"> (ej: "2026-04-10T14:30")
+ * a un ISO string RESPETANDO la zona horaria local del navegador.
+ *
+ * El problema original: new Date("2026-04-10T14:30") se interpreta como UTC
+ * en algunos entornos, lo que provoca un desfase de horas al guardarse.
+ */
+const localDateTimeToISO = (datetimeLocalValue) => {
+  // Añadir segundos si el input los omite (algunos navegadores devuelven HH:MM)
+  const normalized = datetimeLocalValue.length === 16
+    ? datetimeLocalValue + ':00'
+    : datetimeLocalValue;
+
+  // Parsear cada parte manualmente para evitar que JS asuma UTC
+  const [datePart, timePart] = normalized.split('T');
+  const [year, month, day]   = datePart.split('-').map(Number);
+  const [hours, minutes, seconds] = timePart.split(':').map(Number);
+
+  // new Date(year, month-1, day, h, m, s) usa la zona horaria LOCAL del navegador
+  const localDate = new Date(year, month - 1, day, hours, minutes, seconds);
+
+  return localDate.toISOString(); // ahora sí representa el momento correcto en UTC
+};
+
 const fmt = (a) => new Intl.NumberFormat('es-MX', { style:'currency', currency:'MXN' }).format(a);
 
 const BalanceEditDialog = ({ user, onUpdate }) => {
@@ -45,8 +69,13 @@ const BalanceEditDialog = ({ user, onUpdate }) => {
     if (!reason) { alert("Por favor, especifica un motivo para el ajuste."); return; }
     const amount = parseFloat(adjustmentAmount);
     if (isNaN(amount)) { alert("La cantidad debe ser un número válido."); return; }
+
     setLoading(true);
-    const isoDate = new Date(txDate).toISOString();
+
+    // ✅ CORRECCIÓN: usar localDateTimeToISO en lugar de new Date(txDate).toISOString()
+    //    para respetar la zona horaria local y no guardar con la hora real/UTC incorrecta.
+    const isoDate = localDateTimeToISO(txDate);
+
     await onUpdate(user.id, amount, reason, isoDate);
     setLoading(false);
     setIsOpen(false);
@@ -109,7 +138,7 @@ const BalanceEditDialog = ({ user, onUpdate }) => {
               />
             </div>
 
-            {/* ✅ Fecha del movimiento */}
+            {/* Fecha del movimiento */}
             <div>
               <label className="be-label">Fecha del Movimiento</label>
               <input

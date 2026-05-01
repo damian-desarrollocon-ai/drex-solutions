@@ -47,7 +47,9 @@ const AdminBalances = () => {
     ));
   },[searchTerm,users]);
 
-  const handleUpdateBalance = async (userId, adjustmentAmount, reason) => {
+  // ✅ CORRECCIÓN: se agrega el parámetro isoDate que mandaba BalanceEditDialog
+  //    y se pasa como created_at en el insert de transactions.
+  const handleUpdateBalance = async (userId, adjustmentAmount, reason, isoDate) => {
     const user = users.find(u=>u.id===userId);
     if (!user) return;
     const newBalance = (Number(user.balance)||0) + adjustmentAmount;
@@ -57,7 +59,8 @@ const AdminBalances = () => {
       user_id:userId, amount:Math.abs(adjustmentAmount),
       type:adjustmentAmount>=0?'credit':'debit',
       description:`Ajuste administrativo: ${reason}`,
-      recipient_name:'System', status:'completed'
+      recipient_name:'System', status:'completed',
+      created_at: isoDate  // ✅ CORRECCIÓN: fecha elegida por el admin, no now()
     });
     toast({title:"Éxito",description:"Balance actualizado."});
     loadData();
